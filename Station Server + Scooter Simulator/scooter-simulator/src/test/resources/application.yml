@@ -1,0 +1,7 @@
+server:
+  port: 0
+
+simulator:
+  fleet-size: 2
+  tick-interval-ms: 100
+  default-station-url: http://localhost:8084

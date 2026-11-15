@@ -1,0 +1,29 @@
+server:
+  port: 0
+
+station:
+  id: test_station
+  name: Test Station
+  lat: 45.7538
+  lon: 21.2257
+
+spring:
+  datasource:
+    url: jdbc:sqlite:./target/test_station.db?journal_mode=WAL&busy_timeout=5000
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 10000
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  kafka:
+    bootstrap-servers: localhost:9092
+    listener:
+      auto-startup: false
+
+gemini:
+  api-key: test-key
+  mock-enabled: true

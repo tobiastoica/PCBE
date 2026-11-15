@@ -1,0 +1,26 @@
+server:
+  port: ${SERVER_PORT:8084}
+
+station:
+  id: ${STATION_ID:station_a}
+  name: ${STATION_NAME:Central Station A}
+  lat: ${STATION_LAT:45.7538}
+  lon: ${STATION_LON:21.2257}
+
+spring:
+  application:
+    name: charging-station-service
+  datasource:
+    url: jdbc:sqlite:${SQLITE_DB_PATH:./data/station.db}?journal_mode=WAL&busy_timeout=5000
+    driver-class-name: org.sqlite.JDBC
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  mock-enabled: ${MOCK_GEMINI:true}

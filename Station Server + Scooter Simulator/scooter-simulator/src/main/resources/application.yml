@@ -1,0 +1,11 @@
+server:
+  port: ${SERVER_PORT:8088}
+
+spring:
+  application:
+    name: scooter-simulator
+
+simulator:
+  fleet-size: ${FLEET_SIZE:10}
+  tick-interval-ms: ${TICK_INTERVAL_MS:3000}
+  default-station-url: ${DEFAULT_STATION_URL:http://localhost:8084}
