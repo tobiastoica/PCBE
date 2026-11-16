@@ -46,13 +46,15 @@ public class FleetEventConsumer {
             log.info("Received ride lifecycle event from Kafka: {}", message);
             JsonNode root = objectMapper.readTree(message);
 
-            String eventType = root.path("eventType").asText();
-            JsonNode payload = root.path("payload");
+            String eventType = root.path("eventType").asText(root.path("type").asText(""));
+            JsonNode payload = root.has("payload") && !root.path("payload").isNull() ? root.path("payload") : root;
 
-            if ("RIDE_STARTED".equalsIgnoreCase(eventType)) {
+            if ("RIDE_STARTED".equalsIgnoreCase(eventType) || "fleet.ride-started".equalsIgnoreCase(eventType)) {
                 handleRideStarted(payload);
-            } else if ("RIDE_ENDED".equalsIgnoreCase(eventType)) {
+            } else if ("RIDE_ENDED".equalsIgnoreCase(eventType) || "fleet.ride-ended".equalsIgnoreCase(eventType)) {
                 handleRideEnded(payload);
+            } else {
+                log.warn("Unknown ride lifecycle eventType: {}", eventType);
             }
         } catch (Exception e) {
             log.error("Error processing ride lifecycle event: {}", e.getMessage(), e);
@@ -65,9 +67,12 @@ public class FleetEventConsumer {
         try {
             log.info("Received station handover event from Kafka: {}", message);
             JsonNode root = objectMapper.readTree(message);
+            JsonNode payload = root.has("payload") && !root.path("payload").isNull() ? root.path("payload") : root;
 
-            String scooterId = root.path("scooterId").asText();
-            String targetStationId = root.path("targetStationId").asText();
+            String scooterId = payload.path("scooterId").asText();
+            String targetStationId = payload.path("toStationId").asText(
+                    payload.path("targetStationId").asText(payload.path("destinationStationId").asText(""))
+            );
 
             if (scooterId != null && !scooterId.isBlank() && targetStationId != null && !targetStationId.isBlank()) {
                 Optional<Scooter> scooterOpt = scooterRepository.findById(scooterId);
@@ -83,6 +88,27 @@ public class FleetEventConsumer {
             }
         } catch (Exception e) {
             log.error("Error processing station handover event: {}", e.getMessage(), e);
+        }
+    }
+
+    @KafkaListener(topics = KafkaTopicConfig.TOPIC_SCOOTER_TELEMETRY, groupId = "central-server-telemetry-group")
+    public void handleScooterTelemetryEvent(String message) {
+        try {
+            JsonNode root = objectMapper.readTree(message);
+            JsonNode payload = root.has("payload") && !root.path("payload").isNull() ? root.path("payload") : root;
+
+            String scooterId = payload.path("scooterId").asText();
+            if (scooterId == null || scooterId.isBlank()) return;
+
+            double lat = payload.path("latitude").asDouble(payload.path("lat").asDouble(0.0));
+            double lon = payload.path("longitude").asDouble(payload.path("lon").asDouble(0.0));
+            double speed = payload.path("speedKmh").asDouble(payload.path("speed").asDouble(0.0));
+            int battery = payload.path("batteryLevel").asInt(100);
+            String status = payload.path("status").asText("MOVING");
+
+            geoSpatialService.saveLiveTelemetry(scooterId, lat, lon, speed, battery, status);
+        } catch (Exception e) {
+            log.debug("Telemetry event parse ignored: {}", e.getMessage());
         }
     }
 
@@ -121,11 +147,16 @@ public class FleetEventConsumer {
         double endLon = payload.path("endLongitude").asDouble();
         int batteryLevel = payload.path("batteryLevel").asInt(80);
         int fareCents = payload.path("fareCents").asInt(0);
-        String dockedStationId = payload.path("dockedStationId").asText(null);
+        String dockedStationId = payload.path("destinationStationId").asText(
+                payload.path("dockedStationId").asText(payload.path("stationId").asText(null))
+        );
         String photoUrl = payload.path("photoUrl").asText(null);
-        boolean isCompliant = payload.path("isCompliantParking").asBoolean(true);
+        boolean isCompliant = payload.has("parkingCompliance") ?
+                payload.path("parkingCompliance").path("compliant").asBoolean(true) :
+                payload.path("isCompliantParking").asBoolean(true);
         String violationReason = payload.path("parkingViolationReason").asText(null);
-        String routeTrace = payload.has("routeTrace") ? payload.path("routeTrace").toString() : null;
+        String routeTrace = payload.has("routePoints") ? payload.path("routePoints").toString() :
+                (payload.has("routeTrace") ? payload.path("routeTrace").toString() : null);
 
         // 1. Update Ride in PostgreSQL
         Optional<Ride> rideOpt = rideRepository.findById(rideId);

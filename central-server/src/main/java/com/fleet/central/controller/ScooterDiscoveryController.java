@@ -16,26 +16,35 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/scooters")
-@Tag(name = "Fleet Discovery", description = "Proximity search for stationary available scooters")
+@Tag(name = "Fleet Discovery & Reservations", description = "Proximity search and reservations for stationary scooters")
 public class ScooterDiscoveryController {
 
     private final GeoSpatialService geoSpatialService;
     private final ScooterRepository scooterRepository;
+    private final com.fleet.central.service.FleetCommandService fleetCommandService;
 
-    public ScooterDiscoveryController(GeoSpatialService geoSpatialService, ScooterRepository scooterRepository) {
+    public ScooterDiscoveryController(GeoSpatialService geoSpatialService,
+                                      ScooterRepository scooterRepository,
+                                      com.fleet.central.service.FleetCommandService fleetCommandService) {
         this.geoSpatialService = geoSpatialService;
         this.scooterRepository = scooterRepository;
+        this.fleetCommandService = fleetCommandService;
     }
 
     @GetMapping("/nearby")
     @Operation(summary = "Find nearby available stationary scooters within radius")
     public ResponseEntity<List<ScooterNearbyDto>> getNearbyScooters(
-            @RequestParam double lat,
-            @RequestParam double lon,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double latitude,
+            @RequestParam(required = false) Double lon,
+            @RequestParam(required = false) Double longitude,
             @RequestParam(defaultValue = "1000") double radiusMeters) {
 
+        double actualLat = lat != null ? lat : (latitude != null ? latitude : 45.7538);
+        double actualLon = lon != null ? lon : (longitude != null ? longitude : 21.2257);
+
         // 1. Primary fast path: Query Redis GEO index
-        List<ScooterNearbyDto> nearby = geoSpatialService.findNearby(lat, lon, radiusMeters);
+        List<ScooterNearbyDto> nearby = geoSpatialService.findNearby(actualLat, actualLon, radiusMeters);
 
         // 2. Fallback path if Redis is warming or temporarily unavailable
         if (nearby.isEmpty()) {
@@ -43,7 +52,7 @@ public class ScooterDiscoveryController {
             List<ScooterNearbyDto> fallbackList = new ArrayList<>();
 
             for (Scooter s : available) {
-                double dist = calculateHaversineDistanceMeters(lat, lon, s.getCurrentLat(), s.getCurrentLon());
+                double dist = calculateHaversineDistanceMeters(actualLat, actualLon, s.getCurrentLat(), s.getCurrentLon());
                 if (dist <= radiusMeters) {
                     String stationId = s.getAssignedStation() != null ? s.getAssignedStation().getStationId() : "station_a";
                     String stationName = s.getAssignedStation() != null ? s.getAssignedStation().getName() : "Station";
@@ -70,6 +79,30 @@ public class ScooterDiscoveryController {
         }
 
         return ResponseEntity.ok(nearby);
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get specific scooter details and connected station connection information")
+    public ResponseEntity<ScooterNearbyDto> getScooterDetails(@PathVariable String id) {
+        return ResponseEntity.ok(fleetCommandService.getScooterDetails(id));
+    }
+
+    @PostMapping("/{id}/reserve")
+    @Operation(summary = "Reserve and lock a scooter for a user for up to 60 minutes")
+    public ResponseEntity<com.fleet.central.dto.ScooterReservationDto> reserveScooter(
+            @PathVariable String id,
+            @RequestBody(required = false) com.fleet.central.dto.ReservationRequest request) {
+        String userId = (request != null && request.getUserId() != null) ? request.getUserId() : "usr_rider";
+        return ResponseEntity.ok(fleetCommandService.reserveScooter(id, userId));
+    }
+
+    @PostMapping("/{id}/cancel-reserve")
+    @Operation(summary = "Cancel reservation and unlock scooter back to available inventory")
+    public ResponseEntity<com.fleet.central.dto.ScooterReservationDto> cancelReservation(
+            @PathVariable String id,
+            @RequestBody(required = false) com.fleet.central.dto.ReservationRequest request) {
+        String userId = (request != null && request.getUserId() != null) ? request.getUserId() : "usr_rider";
+        return ResponseEntity.ok(fleetCommandService.cancelReservation(id, userId));
     }
 
     private double calculateHaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2) {

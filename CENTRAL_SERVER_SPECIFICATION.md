@@ -94,8 +94,8 @@ Registers a new customer account.
 Primary discovery endpoint used by the mobile app and UI map tab. Interrogates **Redis 7** using `GEORADIUS` to return stationary scooters ready for rental.
 - **Access:** Public / Authenticated
 - **Query Parameters:**
-  - `lat` (double, required): Latitude of user or map center (e.g. `45.7537`)
-  - `lon` (double, required): Longitude of user or map center (e.g. `21.2257`)
+  - `lat` or `latitude` (double, required): Latitude of user or map center (e.g. `45.7537`)
+  - `lon` or `longitude` (double, required): Longitude of user or map center (e.g. `21.2257`)
   - `radiusMeters` (integer, optional, default: `1000`): Search radius in meters
 - **Response:** `200 OK`
   ```json
@@ -109,12 +109,81 @@ Primary discovery endpoint used by the mobile app and UI map tab. Interrogates *
       "lon": 21.2257,
       "stationId": "station_a",
       "stationName": "Victory Square Station",
-      "stationUrl": "http://station-a:8084",
+      "stationUrl": "http://station_a:8084",
       "stationPort": 8084,
       "distanceMeters": 42
     }
   ]
   ```
+
+#### `GET /api/v1/scooters/{id}`
+Inspects a specific scooter by ID, returning its hardware status and managing edge station network connection so the mobile app or client can communicate directly with the edge station.
+- **Access:** Public / Authenticated
+- **Path Variable:** `id` (e.g. `sc_101`)
+- **Response:** `200 OK`
+  ```json
+  {
+    "scooterId": "sc_101",
+    "model": "Ninebot Max G2",
+    "batteryLevel": 92,
+    "status": "AVAILABLE",
+    "lat": 45.7540,
+    "lon": 21.2259,
+    "stationId": "station_a",
+    "stationName": "Victory Square Station",
+    "stationUrl": "http://station_a:8084",
+    "stationPort": 8084,
+    "distanceMeters": 0
+  }
+  ```
+
+#### `POST /api/v1/scooters/{id}/reserve`
+Reserves and blocks a scooter for a user prior to unlocking. Sets status to `RESERVED` in PostgreSQL and temporarily evicts the scooter from Redis `fleet:stationary:geo` to prevent double-booking.
+- **Access:** Public / Authenticated
+- **Path Variable:** `id` (e.g. `sc_101`)
+- **Query Parameters:** `userId` (string, optional, default: `usr_demo`)
+- **Response:** `200 OK`
+  ```json
+  {
+    "scooterId": "sc_101",
+    "status": "LOCKED_FOR_USER",
+    "reservedForUserId": "usr_demo",
+    "stationId": "station_a",
+    "stationUrl": "http://station_a:8084",
+    "stationPort": 8084,
+    "reservationExpiresInSeconds": 3600,
+    "message": "Scooter sc_101 successfully reserved and locked. Connect to station for ride initiation."
+  }
+  ```
+
+#### `POST /api/v1/scooters/{id}/cancel-reserve`
+Cancels an active reservation, returning status to `AVAILABLE` in PostgreSQL and re-indexing the scooter into Redis `fleet:stationary:geo`.
+- **Access:** Public / Authenticated
+- **Path Variable:** `id` (e.g. `sc_101`)
+- **Response:** `200 OK`
+  ```json
+  {
+    "scooterId": "sc_101",
+    "status": "CANCELLED_AND_UNLOCKED",
+    "stationId": "station_a",
+    "stationUrl": "http://station_a:8084",
+    "stationPort": 8084,
+    "reservationExpiresInSeconds": 0,
+    "message": "Reservation cancelled. Scooter sc_101 is now AVAILABLE for fleet rental."
+  }
+  ```
+
+#### `POST /api/v1/rides/reserve` & `POST /api/v1/rides/reserve/cancel`
+Direct inter-service endpoints matching teammate Edge Station and Mobile App JSON request body contracts.
+- **Access:** Public / Authenticated
+- **Request Body:**
+  ```json
+  {
+    "userId": "usr_44",
+    "scooterId": "sc_101"
+  }
+  ```
+- **Response:** `200 OK` (`ScooterReservationDto`)
 
 ---
 
@@ -311,17 +380,184 @@ Returns completed rides with full details, fare breakdown, and parking complianc
 
 ---
 
+### 3.6. Remote MCP (Model Context Protocol) Server Gateway Endpoints
+
+To enable autonomous AI agents (such as the team's `fleet-mcp-server` on port 8083 or Antigravity agents) to inspect and control the micro-mobility system, the Central Server exposes dedicated REST endpoints corresponding directly to the MCP tools defined in the project architecture:
+
+#### Tool 1: `find_available_scooters` -> `GET /api/v1/scooters/nearby`
+- Accepts `latitude`, `longitude`, `radiusMeters`.
+- Queries Redis 7 geospatial index and returns nearest scooters with their assigned station connection details.
+
+#### Tool 2: `book_scooter_for_user` -> `POST /api/v1/mcp/book-scooter`
+Reserves a scooter for a specific user.
+- **Access:** Public / Authenticated / MCP
+- **Request Body:**
+  ```json
+  {
+    "userId": "usr_mcp_42",
+    "scooterId": "sc_101"
+  }
+  ```
+- **Response:** `200 OK` (`ScooterReservationDto`)
+  ```json
+  {
+    "scooterId": "sc_101",
+    "status": "LOCKED_FOR_USER",
+    "reservedForUserId": "usr_mcp_42",
+    "stationId": "station_a",
+    "stationUrl": "http://station_a:8084",
+    "stationPort": 8084,
+    "reservationExpiresInSeconds": 3600,
+    "message": "Scooter sc_101 successfully reserved and locked. Connect to station for ride initiation."
+  }
+  ```
+
+#### Tool 3: `get_fleet_and_stations_status` -> `GET /api/v1/mcp/fleet-status`
+Returns high-level holistic intelligence combining Redis cache metrics and PostgreSQL state. Includes station dock occupancy, surplus/deficit vs target thresholds, docked scooter ID arrays, and overall fleet availability.
+- **Access:** Public / Authenticated / MCP
+- **Response:** `200 OK`
+  ```json
+  {
+    "totalStations": 4,
+    "totalScooters": 11,
+    "availableScooters": 11,
+    "activeRides": 0,
+    "stations": [
+      {
+        "stationId": "station_a",
+        "name": "Victory Square Station",
+        "capacity": 15,
+        "dockedCount": 4,
+        "occupancyPercent": 26.7,
+        "surplusOrDeficit": -3,
+        "dockedScooterIds": ["sc_101", "sc_102", "sc_103", "sc_104"]
+      }
+    ],
+    "scooters": [
+      {
+        "scooterId": "sc_101",
+        "model": "Ninebot Max G2",
+        "batteryLevel": 92,
+        "status": "AVAILABLE",
+        "stationId": "station_a"
+      }
+    ],
+    "systemHealthy": true,
+    "timestamp": "2026-11-16T19:20:00Z"
+  }
+  ```
+
+#### Tool 4: `propose_fleet_rebalancing` -> `POST /api/v1/rebalance/propose`
+Enables autonomous agents to submit formal rebalancing directives (`sourceStationId`, `targetStationId`, `scooterIds`, `justification`) for human operator review and automated dispatch.
+
+---
+
+### 3.7. Redis In-Memory Datastore & Statistical Reporting APIs
+
+To allow operators, external MCP servers, and monitoring agents to directly query the state of the Redis in-memory cache and aggregate rich operational reports without manual SQL/CLI access:
+
+#### `GET /api/v1/reports/redis-geospatial`
+Direct inspection of Redis 7 database keys and geospatial sets.
+- **Access:** Public / Authenticated / Operators
+- **Response:** `200 OK`
+  ```json
+  {
+    "keyName": "fleet:stationary:geo",
+    "totalIndexedScooters": 11,
+    "indexedScooters": [
+      {
+        "scooterId": "sc_101",
+        "model": "Ninebot Max G2",
+        "batteryLevel": 92,
+        "status": "AVAILABLE",
+        "lat": 45.7540,
+        "lon": 21.2259,
+        "stationId": "station_a",
+        "stationName": "Victory Square Station",
+        "stationUrl": "http://station_a:8084",
+        "stationPort": 8084,
+        "distanceMeters": 0
+      }
+    ],
+    "metadataKeysCount": 11,
+    "status": "HEALTHY",
+    "queryTimestamp": "2026-11-16T19:20:26Z"
+  }
+  ```
+
+#### `GET /api/v1/reports/station-occupancy`
+Aggregates live charging dock utilization, total capacity, deficits, and docked scooter rosters across all operational edge nodes.
+- **Access:** Public / Authenticated
+- **Response:** `200 OK`
+  ```json
+  {
+    "totalStations": 4,
+    "totalCapacity": 65,
+    "totalDocked": 11,
+    "averageOccupancyPercent": 16.9,
+    "stations": [
+      {
+        "stationId": "station_a",
+        "name": "Victory Square Station",
+        "capacity": 15,
+        "dockedCount": 4,
+        "occupancyPercent": 26.7,
+        "status": "ACTIVE",
+        "surplusOrDeficit": -3,
+        "dockedScooterIds": ["sc_101", "sc_102", "sc_103", "sc_104"],
+        "full": false,
+        "empty": false
+      }
+    ]
+  }
+  ```
+
+#### `GET /api/v1/reports/fleet-summary`
+Comprehensive platform analytics combining PostgreSQL persistent SSoT records with live Redis cache telemetry.
+- **Access:** Public / Authenticated
+- **Response:** `200 OK`
+  ```json
+  {
+    "totalScooters": 11,
+    "availableScooters": 11,
+    "reservedScooters": 0,
+    "movingScooters": 0,
+    "maintenanceScooters": 0,
+    "averageBatteryPercent": 82.0,
+    "minBatteryPercent": 54,
+    "maxBatteryPercent": 96,
+    "lowBatteryAlertCount": 0,
+    "batteryDistribution": {
+      "80-100%": 7,
+      "50-79%": 4,
+      "20-49%": 0,
+      "<20%": 0
+    },
+    "totalRides": 0,
+    "activeRides": 0,
+    "completedRides": 0,
+    "totalRevenueCents": 0,
+    "totalRevenueEur": 0.0,
+    "parkingCompliancePercent": 100.0,
+    "generatedAt": "2026-11-16T19:20:27Z"
+  }
+  ```
+
+---
+
 ## 4. Kafka Topics & Messaging Schemas
 
 Broker Port: `9092`  
+Internal Docker Listener: `kafka-broker:29092`  
+External Host Listener: `localhost:9092`  
 Serialization: Standard JSON UTF-8
 
 ### 4.1. Topics Consumed by Central Server
 
-#### Topic: `ride-lifecycle-events`
-Edge station nodes emit events here when rides begin, end, or get cancelled.
+#### Topic: `ride-lifecycle-events` (3 partitions)
+Edge station nodes emit events here when rides begin, end, or get cancelled. The consumer in `FleetEventConsumer.java` supports both nested (`{"eventType": "...", "payload": {...}}`) and flat JSON structures, as well as polymorphic field names:
 
-1. **`fleet.ride-started`**
+1. **`fleet.ride-started` / `RIDE_STARTED`**
    - **Central Server Action:**
      - Sets scooter `current_status = 'IN_USE'` in PostgreSQL.
      - Removes scooter from Redis `fleet:stationary:geo` using `ZREM`.
@@ -344,11 +580,12 @@ Edge station nodes emit events here when rides begin, end, or get cancelled.
      }
      ```
 
-2. **`fleet.ride-ended`**
+2. **`fleet.ride-ended` / `RIDE_ENDED`**
    - **Central Server Action:**
      - Persists completed ride in PostgreSQL `rides` (including fare, duration, route trace, parking compliance verdict).
      - Updates scooter in PostgreSQL (`current_lat`, `current_lon`, `battery_level`, `current_status = 'AVAILABLE'`, `assigned_station_id`).
      - Adds scooter back into Redis `fleet:stationary:geo` via `GEOADD`.
+     - Supports `dockedStationId` or `destinationStationId`, `routeTrace` or `routePoints`, and `parkingCompliance.compliant`.
    - **Schema:**
      ```json
      {
@@ -378,18 +615,38 @@ Edge station nodes emit events here when rides begin, end, or get cancelled.
      }
      ```
 
-#### Topic: `station-handover-events`
-Edge nodes notify the system when a scooter started from Station A is docked or claimed at Station B.
-- **`fleet.scooter-docked` / `fleet.handover-completed`**
+#### Topic: `station-handover-events` (3 partitions)
+Edge nodes notify the system when a scooter is docked, undocked, or when a handover is requested.
+- **Accepted Events:** `fleet.scooter-docked`, `SCOOTER_DOCKED`, `HANDOVER_REQUEST`, `station.handover-request`, `fleet.handover-completed`.
 - **Central Server Action:**
   - Updates scooter's `assigned_station_id = targetStationId` in PostgreSQL.
   - Updates Redis metadata `fleet:scooter:{id}:meta`.
+
+#### Topic: `scooter-telemetry-topic` (3 partitions)
+High-frequency (3-second) GPS and IoT telemetry broadcast by in-transit scooters or edge station gateways.
+- **Consumer Group:** `central-server-telemetry-group`
+- **Central Server Action:**
+  - Ingests telemetry directly into Redis Hash key `fleet:scooter:{id}:live` with a 5-minute (300s) TTL.
+  - Completely bypasses PostgreSQL to prevent relational database write saturation during rush hour.
+  - Serves live locations on-demand via `GET /api/v1/admin/scooters/{id}/live-location`.
+- **Schema:**
+  ```json
+  {
+    "scooterId": "sc_101",
+    "latitude": 45.7525,
+    "longitude": 21.2270,
+    "speedKmh": 18.4,
+    "batteryLevel": 85,
+    "status": "MOVING",
+    "timestamp": "2026-11-16T19:20:00Z"
+  }
+  ```
 
 ---
 
 ### 4.2. Topics Produced by Central Server
 
-#### Topic: `admin-transfer-commands`
+#### Topic: `admin-transfer-commands` (3 partitions)
 Emitted when an operator or an approved AI rebalancing task executes.
 - **Schema:**
   ```json
@@ -399,6 +656,10 @@ Emitted when an operator or an approved AI rebalancing task executes.
     "timestamp": "2026-11-16T11:30:00Z",
     "sourceStationId": "station_a",
     "targetStationId": "station_b",
+    "scooterIds": ["sc_101", "sc_104"],
+    "taskId": "reb_9921"
+  }
+  ```
     "scooterIds": ["sc_101", "sc_104"],
     "taskId": "reb_9921"
   }
@@ -494,10 +755,14 @@ CREATE TABLE rebalance_tasks (
 1. **`fleet:stationary:geo`** (Redis Geospatial Sorted Set)
    - Primitives: `GEOADD fleet:stationary:geo <lon> <lat> <scooter_id>`
    - Queries: `GEORADIUS fleet:stationary:geo <lon> <lat> <radius> m WITHDIST WITHCOORD`
-   - Removals: `ZREM fleet:stationary:geo <scooter_id>` on ride start/reservation.
+   - Removals: `ZREM fleet:stationary:geo <scooter_id>` on ride start or reservation.
 2. **`fleet:scooter:{id}:meta`** (Redis Hash)
    - Fields: `model`, `batteryLevel`, `status`, `stationId`, `stationName`, `stationPort`, `stationUrl`
    - Updated whenever scooter attributes or station handovers occur.
+3. **`fleet:scooter:{id}:live`** (Redis Hash - Real-time Telemetry Cache)
+   - Fields: `latitude`, `longitude`, `speedKmh`, `batteryLevel`, `status`, `timestamp`
+   - Populated automatically by Kafka consumer listening to `scooter-telemetry-topic`.
+   - Set with a 5-minute (300 seconds) sliding TTL. In-transit telemetry stays in-memory to prevent relational database thrashing.
 
 ---
 

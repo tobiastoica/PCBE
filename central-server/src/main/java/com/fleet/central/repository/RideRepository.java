@@ -13,4 +13,7 @@ public interface RideRepository extends JpaRepository<Ride, String> {
     List<Ride> findByScooterIdOrderByStartTimeDesc(String scooterId);
     Optional<Ride> findByScooterIdAndEndTimeIsNull(String scooterId);
     List<Ride> findAllByOrderByStartTimeDesc();
+    long countByEndTimeIsNull();
+    long countByEndTimeIsNotNull();
+    List<Ride> findByEndTimeIsNotNull();
 }

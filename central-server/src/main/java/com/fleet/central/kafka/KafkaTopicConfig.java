@@ -11,6 +11,7 @@ public class KafkaTopicConfig {
     public static final String TOPIC_RIDE_LIFECYCLE = "ride-lifecycle-events";
     public static final String TOPIC_STATION_HANDOVER = "station-handover-events";
     public static final String TOPIC_ADMIN_TRANSFER = "admin-transfer-commands";
+    public static final String TOPIC_SCOOTER_TELEMETRY = "scooter-telemetry-topic";
 
     @Bean
     public NewTopic rideLifecycleTopic() {
@@ -31,6 +32,14 @@ public class KafkaTopicConfig {
     @Bean
     public NewTopic adminTransferTopic() {
         return TopicBuilder.name(TOPIC_ADMIN_TRANSFER)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic scooterTelemetryTopic() {
+        return TopicBuilder.name(TOPIC_SCOOTER_TELEMETRY)
                 .partitions(3)
                 .replicas(1)
                 .build();

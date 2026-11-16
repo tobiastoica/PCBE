@@ -186,20 +186,38 @@ The React administration dashboard ([http://localhost:3010](http://localhost:301
 
 For comprehensive API contracts, request/response JSON schemas, and error codes, refer to [CENTRAL_SERVER_SPECIFICATION.md](file:///C:/Users/Tobi/PCBE/CENTRAL_SERVER_SPECIFICATION.md).
 
-### REST Endpoints
+### Rider & Discovery Endpoints
+- `GET /api/v1/scooters/nearby` — Sub-millisecond Redis geospatial discovery (`?lat=45.7538&lon=21.2257&radiusMeters=2000`). Returns scooter status and managing station network address (`stationUrl: http://station_a:8084`, `stationPort: 8084`).
+- `GET /api/v1/scooters/{id}` — Query specific scooter hardware and its assigned station gateway for direct mobile app to station communication.
+- `POST /api/v1/scooters/{id}/reserve` — Reserve and lock scooter for 1 hour (`LOCKED_FOR_USER`), temporarily evicting it from Redis `fleet:stationary:geo` to prevent double-booking.
+- `POST /api/v1/scooters/{id}/cancel-reserve` — Cancel reservation, unlocking scooter and restoring it to Redis discovery.
+- `POST /api/v1/rides/reserve` & `POST /api/v1/rides/reserve/cancel` — Direct edge station and mobile app payload contract (`{ "userId": "...", "scooterId": "..." }`).
+
+### Remote MCP Server & AI Agent Gateway (Tools 1–4)
+- `GET /api/v1/mcp/fleet-status` — **MCP Tool 3 (`get_fleet_and_stations_status`)**: Returns complete station occupancy, surplus/deficit vs target thresholds, docked scooter IDs, and fleet summary.
+- `POST /api/v1/mcp/book-scooter` — **MCP Tool 2 (`book_scooter_for_user`)**: Locks and books a scooter on behalf of an AI-assisted rider.
+- `POST /api/v1/rebalance/propose` — **MCP Tool 4 (`propose_fleet_rebalancing`)**: Submits automated rebalance proposals for operator approval.
+- `GET /api/v1/scooters/nearby` — **MCP Tool 1 (`find_available_scooters`)**: In-memory Redis proximity search.
+
+### Redis Datastore & Operational Analytics Reports
+- `GET /api/v1/reports/redis-geospatial` — Direct inspection of Redis in-memory key `fleet:stationary:geo`, listing all currently indexed available scooters and distances.
+- `GET /api/v1/reports/station-occupancy` — Real-time charging dock analytics, percentage utilization, deficits/surpluses, and docked scooter arrays.
+- `GET /api/v1/reports/fleet-summary` — Multi-datastore statistical report (battery distribution histogram, total rides, revenue, parking compliance rate).
+
+### Administration Endpoints
 - `POST /api/v1/auth/login` — Authenticate and receive JWT.
-- `GET /api/v1/scooters/nearby` — Sub-millisecond Redis geospatial discovery (`?lat=45.7538&lon=21.2257&radiusMeters=2000`).
 - `GET /api/v1/admin/fleet-overview` — Global fleet status, active rides, and station occupancy.
 - `POST /api/v1/admin/scooters/transfer` — Relocate a scooter between charging docks.
 - `POST /api/v1/admin/stations/spawn` — Provision a new station container via Docker socket.
-- `GET /api/v1/admin/scooters/{id}/live-location` — Query Edge Station for real-time in-transit telemetry.
-- `GET /api/v1/admin/rebalance/proposals` — Retrieve AI rebalancing proposals.
-- `POST /api/v1/admin/rebalance/tasks/{id}/approve` — Approve a fleet rebalance task.
-- `GET /api/v1/rides/my-rides` — Retrieve rider trip history.
+- `GET /api/v1/admin/scooters/{id}/live-location` — Query Edge Station or Redis live cache for in-transit telemetry.
+- `GET /api/v1/rebalance/pending` — Retrieve pending AI rebalancing proposals.
+- `POST /api/v1/rebalance/{id}/approve` — Approve a fleet rebalance task and dispatch via Kafka.
+- `GET /api/v1/rides/history` — Audit log of completed rides and parking compliance flags.
 
 ### Kafka Event Streaming Topics
-- `station-handover-events` (3 partitions) — Ingests `SCOOTER_DOCKED` and `SCOOTER_UNDOCKED` events from Edge Stations.
-- `ride-lifecycle-events` (3 partitions) — Ingests `RIDE_STARTED` and `RIDE_ENDED` events.
+- `ride-lifecycle-events` (3 partitions) — Ingests `RIDE_STARTED` and `RIDE_ENDED` (with route points and parking compliance).
+- `station-handover-events` (3 partitions) — Ingests `SCOOTER_DOCKED`, `HANDOVER_REQUEST`, and undock events.
+- `scooter-telemetry-topic` (3 partitions) — Ingests high-frequency 3s GPS telemetry directly into Redis `fleet:scooter:{id}:live` with 5-minute sliding TTL, shielding PostgreSQL.
 - `admin-transfer-commands` (3 partitions) — Dispatches administrative transfer orders to logistics dispatchers.
 
 ---
