@@ -31,4 +31,10 @@ body {
   height: 100%;
   border-radius: 0.5rem;
   z-index: 10;
+  background-color: #1e293b;
+}
+
+/* Dark theme styling for OpenStreetMap tiles without requiring third-party API keys */
+.dark-map .leaflet-tile-pane {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
 }

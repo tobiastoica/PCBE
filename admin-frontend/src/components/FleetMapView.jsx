@@ -15,6 +15,7 @@ export default function FleetMapView() {
   const [filterBattery, setFilterBattery] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
+  const [mapTheme, setMapTheme] = useState('dark');
 
   // Default Center: Timisoara Center (Victory Square)
   const defaultCenter = [45.7538, 21.2257];
@@ -30,20 +31,34 @@ export default function FleetMapView() {
         zoomControl: true,
       });
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
       }).addTo(map);
 
       markersLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
+
+      // Invalidate map size after layout is stabilized
+      const timer = setTimeout(() => {
+        map.invalidateSize();
+      }, 300);
+
+      const handleResize = () => map.invalidateSize();
+      window.addEventListener('resize', handleResize);
+
+      fetchData();
+
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('resize', handleResize);
+      };
+    } else {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 100);
+      fetchData();
     }
-
-    fetchData();
-
-    return () => {
-      // Keep map instance mounted
-    };
   }, []);
 
   const fetchData = async () => {
@@ -201,12 +216,21 @@ export default function FleetMapView() {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
+
+          <button
+            onClick={() => setMapTheme(prev => prev === 'dark' ? 'streets' : 'dark')}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition"
+            title="Toggle Map Style"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>{mapTheme === 'dark' ? '🌙 Dark' : '☀️ Streets'}</span>
+          </button>
         </div>
       </div>
 
       {/* Main Map Canvas */}
       <div className="relative flex-1 w-full h-full">
-        <div ref={mapContainerRef} className="w-full h-full" />
+        <div ref={mapContainerRef} className={`w-full h-full ${mapTheme === 'dark' ? 'dark-map' : ''}`} />
 
         {/* Floating Detail Overlay Drawer */}
         {selectedItem && (
