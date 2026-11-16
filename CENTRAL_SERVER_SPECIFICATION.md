@@ -508,4 +508,4 @@ The platform is orchestrated as follows:
 - **`redis-cache` (Port 6379):** In-memory cache volume `redis_data`.
 - **`kafka-broker` (Port 9092):** Confluent Kafka in KRaft mode (`29092` internal, `9092` external).
 - **`central-server` (Port 8081):** Spring Boot backend mounting `/var/run/docker.sock`.
-- **`admin-frontend` (Port 3000 / 8081):** React application dashboard.
+- **`admin-frontend` (Port 3010 / 8081):** React application dashboard.
