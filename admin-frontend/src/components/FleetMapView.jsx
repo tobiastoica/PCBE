@@ -229,8 +229,8 @@ export default function FleetMapView() {
       </div>
 
       {/* Main Map Canvas */}
-      <div className="relative flex-1 w-full h-full">
-        <div ref={mapContainerRef} className={`w-full h-full ${mapTheme === 'dark' ? 'dark-map' : ''}`} />
+      <div className={`relative flex-1 w-full h-full ${mapTheme === 'dark' ? 'dark-map' : ''}`}>
+        <div ref={mapContainerRef} className="w-full h-full" />
 
         {/* Floating Detail Overlay Drawer */}
         {selectedItem && (
