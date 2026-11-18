@@ -39,6 +39,10 @@ public class ActiveRide {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    @Column(name = "total_pause_seconds")
+    @Builder.Default
+    private Long totalPauseSeconds = 0L;
+
     @Column(name = "fare_cents")
     private Integer fareCents;
 

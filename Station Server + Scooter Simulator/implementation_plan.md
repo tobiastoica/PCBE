@@ -296,8 +296,8 @@ Package services into production Docker containers, orchestrate with Docker Comp
 | :---: | :--- | :--- | :--- | :---: |
 | **1** | Build & Skeletons | `Stage1ScaffoldingTest` | None | COMPLETED |
 | **2** | SQLite Persistence & WAL | `Stage2DatabaseTest` | Stage 1 | COMPLETED |
-| **3** | Ride Lifecycle & Timers | `Stage3RideLifecycleTest` | Stages 1, 2 | PENDING |
-| **4** | Telemetry & SSE Streaming | `Stage4TelemetryAndSseTest` | Stages 1, 2, 3 | PENDING |
+| **3** | Ride Lifecycle & Timers | `Stage3RideLifecycleTest` | Stages 1, 2 | COMPLETED |
+| **4** | Telemetry & SSE Streaming | `Stage4TelemetryAndSseTest` | Stages 1, 2, 3 | COMPLETED |
 | **5** | Virtual Threads & Grid Movement| `Stage5SimulatorMovementTest`| Stages 1, 2, 3, 4 | PENDING |
 | **6** | Gemini Vision AI Inspection | `Stage6GeminiVisionTest` | Stages 1, 2, 3, 4, 5 | PENDING |
 | **7** | Kafka Handover Choreography | `Stage7KafkaHandoverTest` | Stages 1, 2, 3, 4, 5, 6 | PENDING |
